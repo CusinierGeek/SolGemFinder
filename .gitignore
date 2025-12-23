@@ -1,0 +1,5 @@
+/SolGemFinder.AppHost/appsettings.Development.Local.json
+*.user
+.vs/
+bin/
+obj/

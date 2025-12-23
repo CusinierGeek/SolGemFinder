@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/Éléments de solution/">
+    <File Path=".gitignore" />
+  </Folder>
+  <Project Path="SolGemFinder.ApiService/SolGemFinder.ApiService.csproj" />
+  <Project Path="SolGemFinder.AppHost/SolGemFinder.AppHost.csproj" />
+  <Project Path="SolGemFinder.Domain/SolGemFinder.Domain.csproj" />
+  <Project Path="SolGemFinder.GemFinderWorker/SolGemFinder.GemFinderWorker.csproj" />
+  <Project Path="SolGemFinder.Infrastructure/SolGemFinder.Infrastructure.csproj" />
+  <Project Path="SolGemFinder.ServiceDefaults/SolGemFinder.ServiceDefaults.csproj" />
+  <Project Path="SolGemFinder.Shared/SolGemFinder.Shared.csproj" />
+  <Project Path="SolGemFinder.TradingWorker/SolGemFinder.TradingWorker.csproj" />
+  <Project Path="SolGemFinder.Web/SolGemFinder.Web.csproj" />
+</Solution>

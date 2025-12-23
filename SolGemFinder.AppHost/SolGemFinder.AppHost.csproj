@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Sdk Name="Aspire.AppHost.Sdk" Version="9.5.0" />
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UserSecretsId>5807f51e-e90e-4964-9561-b1a4a510d561</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SolGemFinder.ApiService\SolGemFinder.ApiService.csproj" />
+    <ProjectReference Include="..\SolGemFinder.Web\SolGemFinder.Web.csproj" />
+    <ProjectReference Include="..\SolGemFinder.GemFinderWorker\SolGemFinder.GemFinderWorker.csproj" />
+    <ProjectReference Include="..\SolGemFinder.TradingWorker\SolGemFinder.TradingWorker.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Aspire.Hosting.AppHost" Version="13.1.0" />
+  </ItemGroup>
+
+</Project>
