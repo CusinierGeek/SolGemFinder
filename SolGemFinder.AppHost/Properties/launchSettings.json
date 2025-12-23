@@ -10,7 +10,10 @@
         "ASPNETCORE_ENVIRONMENT": "Development",
         "DOTNET_ENVIRONMENT": "Development",
         "ASPIRE_DASHBOARD_OTLP_ENDPOINT_URL": "https://localhost:21160",
-        "ASPIRE_RESOURCE_SERVICE_ENDPOINT_URL": "https://localhost:22222"
+        "ASPIRE_RESOURCE_SERVICE_ENDPOINT_URL": "https://localhost:22222",
+        "SERVICEBUS_CONNECTION": "Endpoint=sb://localhost;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;",
+        "SERVICEBUS_TOPIC": "discoveries",
+        "SERVICEBUS_SUBSCRIPTION": "trading-sub"
       }
     },
     "http": {
@@ -22,7 +25,9 @@
         "ASPNETCORE_ENVIRONMENT": "Development",
         "DOTNET_ENVIRONMENT": "Development",
         "ASPIRE_DASHBOARD_OTLP_ENDPOINT_URL": "http://localhost:19058",
-        "ASPIRE_RESOURCE_SERVICE_ENDPOINT_URL": "http://localhost:20232"
+        "ASPIRE_RESOURCE_SERVICE_ENDPOINT_URL": "http://localhost:20232",
+        "SERVICEBUS_TOPIC": "discoveries",
+        "SERVICEBUS_SUBSCRIPTION": "trading-sub"
       }
     }
   }

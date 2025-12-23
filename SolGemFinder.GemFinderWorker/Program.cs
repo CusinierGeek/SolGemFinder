@@ -1,7 +1,6 @@
 using Azure.Messaging.ServiceBus;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -11,16 +10,15 @@ var builder = Host.CreateDefaultBuilder(args)
     {
         webBuilder.ConfigureServices((context, services) =>
         {
-            IConfiguration config = context.Configuration;
             var loggerFactory = services.BuildServiceProvider().GetRequiredService<ILoggerFactory>();
             var logger = loggerFactory.CreateLogger("Startup");
 
-            // Read connection string from config or environment
-            var serviceBusConnection = config.GetValue<string>("ServiceBus:ConnectionString") ?? System.Environment.GetEnvironmentVariable("SERVICEBUS_CONNECTION");
+            // Read connection string only from environment variable
+            var serviceBusConnection = System.Environment.GetEnvironmentVariable("SERVICEBUS_CONNECTION");
 
             if (string.IsNullOrWhiteSpace(serviceBusConnection))
             {
-                logger.LogCritical("ServiceBus connection string is not configured. Set ServiceBus:ConnectionString in appsettings or SERVICEBUS_CONNECTION environment variable.");
+                logger.LogCritical("ServiceBus connection string is not configured. Set SERVICEBUS_CONNECTION environment variable.");
                 throw new System.InvalidOperationException("ServiceBus connection string is required");
             }
 
