@@ -12,33 +12,54 @@ public class GemFinderService : BackgroundService
 {
     private readonly ILogger<GemFinderService> _logger;
     private readonly IDiscoveryPublisher _publisher;
+    private readonly GemFinderConsumer? _consumer;
 
-    public GemFinderService(ILogger<GemFinderService> logger, IDiscoveryPublisher publisher)
+    public GemFinderService(ILogger<GemFinderService> logger, IDiscoveryPublisher publisher, GemFinderConsumer? consumer = null)
     {
         _logger = logger;
         _publisher = publisher;
+        _consumer = consumer;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("GemFinderService started (publishing test messages every 30s).");
+        _logger.LogInformation("GemFinderService started (subscription-only mode).");
 
-        while (!stoppingToken.IsCancellationRequested)
+        if (_consumer != null)
         {
-            var message = new { Id = System.Guid.NewGuid(), Timestamp = System.DateTime.UtcNow };
+            _logger.LogInformation("Starting GemFinder consumer to receive indexer messages...");
             try
             {
-                await _publisher.PublishAsync(message, stoppingToken);
-                _logger.LogInformation("Published test discovery {Id}.", message.Id);
+                _consumer.Start();
             }
             catch (System.Exception ex)
             {
-                _logger.LogError(ex, "Error publishing discovery");
+                _logger.LogError(ex, "Failed to start GemFinder consumer");
             }
-
-            await Task.Delay(30_000, stoppingToken);
         }
 
-        _logger.LogInformation("GemFinderService stopping.");
+        try
+        {
+            // Wait until cancellation. No periodic publishing here; Indexer is the only publisher.
+            await Task.Delay(Timeout.Infinite, stoppingToken);
+        }
+        catch (TaskCanceledException) { }
+        finally
+        {
+            if (_consumer != null)
+            {
+                _logger.LogInformation("Stopping GemFinder consumer...");
+                try
+                {
+                    await _consumer.StopAsync();
+                }
+                catch (System.Exception ex)
+                {
+                    _logger.LogError(ex, "Error stopping GemFinder consumer");
+                }
+            }
+
+            _logger.LogInformation("GemFinderService stopping.");
+        }
     }
 }

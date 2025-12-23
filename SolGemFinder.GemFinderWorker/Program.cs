@@ -1,6 +1,7 @@
 using Azure.Messaging.ServiceBus;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -10,6 +11,7 @@ var builder = Host.CreateDefaultBuilder(args)
     {
         webBuilder.ConfigureServices((context, services) =>
         {
+            IConfiguration config = context.Configuration;
             var loggerFactory = services.BuildServiceProvider().GetRequiredService<ILoggerFactory>();
             var logger = loggerFactory.CreateLogger("Startup");
 
@@ -26,6 +28,9 @@ var builder = Host.CreateDefaultBuilder(args)
             services.AddSingleton(new ServiceBusClient(serviceBusConnection));
             services.AddSingleton<ServiceBusDiscoveryPublisher>();
             services.AddSingleton<IDiscoveryPublisher>(sp => sp.GetRequiredService<ServiceBusDiscoveryPublisher>());
+
+            // Register gemfinder consumer
+            services.AddSingleton<GemFinderConsumer>();
 
             services.AddRouting();
 

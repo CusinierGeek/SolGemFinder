@@ -44,4 +44,10 @@ builder.AddProject<Projects.SolGemFinder_TradingWorker>("trading")
     .WaitFor(apiService)
     .WaitFor(gemFinder);
 
+// Indexer worker - listens to pump.fun and publishes discoveries (architecture only)
+builder.AddProject<Projects.SolGemFinder_IndexerWorker>("indexer")
+    .WithHttpHealthCheck("/health")
+    .WithReference(apiService)
+    .WaitFor(apiService);
+
 builder.Build().Run();

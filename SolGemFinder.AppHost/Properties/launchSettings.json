@@ -13,6 +13,7 @@
         "ASPIRE_RESOURCE_SERVICE_ENDPOINT_URL": "https://localhost:22222",
         "SERVICEBUS_CONNECTION": "Endpoint=sb://localhost;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;",
         "SERVICEBUS_TOPIC": "discoveries",
+        "SERVICEBUS_GEMFINDER_SUBSCRIPTION": "gemfinder-sub",
         "SERVICEBUS_SUBSCRIPTION": "trading-sub"
       }
     },
@@ -26,7 +27,9 @@
         "DOTNET_ENVIRONMENT": "Development",
         "ASPIRE_DASHBOARD_OTLP_ENDPOINT_URL": "http://localhost:19058",
         "ASPIRE_RESOURCE_SERVICE_ENDPOINT_URL": "http://localhost:20232",
+        "SERVICEBUS_CONNECTION": "Endpoint=sb://localhost;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;",
         "SERVICEBUS_TOPIC": "discoveries",
+        "SERVICEBUS_GEMFINDER_SUBSCRIPTION": "gemfinder-sub",
         "SERVICEBUS_SUBSCRIPTION": "trading-sub"
       }
     }

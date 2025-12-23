@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using Azure.Messaging.ServiceBus;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using SolGemFinder.Shared.Dtos;
 
 public interface IDiscoveryConsumer
 {
@@ -23,7 +24,6 @@ public class ServiceBusDiscoveryConsumer : IDiscoveryConsumer
         _logger = logger;
         _topic = config.GetValue<string>("ServiceBus:Topic") ?? System.Environment.GetEnvironmentVariable("SERVICEBUS_TOPIC") ?? "discoveries";
         _subscription = config.GetValue<string>("ServiceBus:Subscription") ?? System.Environment.GetEnvironmentVariable("SERVICEBUS_SUBSCRIPTION") ?? "trading-sub";
-        // Do not start the processor here; TradingService controls lifecycle.
     }
 
     public void Start()
@@ -69,7 +69,16 @@ public class ServiceBusDiscoveryConsumer : IDiscoveryConsumer
 
     public Task HandleAsync(string json)
     {
-        _logger.LogInformation("ServiceBus received discovery: {Json}", json);
+        try
+        {
+            var dto = JsonSerializer.Deserialize<DiscoveryDto>(json);
+            _logger.LogInformation("Trading received final discovery {Id} from {Source} with history: {History}", dto?.Id, dto?.Source, dto?.History);
+        }
+        catch (System.Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to deserialize incoming discovery");
+        }
+
         return Task.CompletedTask;
     }
 }

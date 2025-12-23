@@ -1,17 +1,17 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using SolGemFinder.Shared.Dtos;
+using System.Text.Json;
 
 [ApiController]
 [Route("discoveries")]
 public class DiscoveryController : ControllerBase
 {
     private readonly ILogger<DiscoveryController> _logger;
-    private readonly IDiscoveryConsumer _consumer;
 
-    public DiscoveryController(ILogger<DiscoveryController> logger, IDiscoveryConsumer consumer)
+    public DiscoveryController(ILogger<DiscoveryController> logger)
     {
         _logger = logger;
-        _consumer = consumer;
     }
 
     [HttpPost]
@@ -19,7 +19,17 @@ public class DiscoveryController : ControllerBase
     public async Task<IActionResult> Post([FromBody] object payload)
     {
         _logger.LogInformation("Received discovery POST: {Payload}", payload);
-        await _consumer.HandleAsync(System.Text.Json.JsonSerializer.Serialize(payload));
+        try
+        {
+            var json = JsonSerializer.Serialize(payload);
+            var dto = JsonSerializer.Deserialize<DiscoveryDto>(json);
+            _logger.LogInformation("Trading received final discovery {Id} from {Source} with history: {History}", dto?.Id, dto?.Source, dto?.History);
+        }
+        catch (System.Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to parse discovery payload");
+        }
+
         return Accepted();
     }
 }

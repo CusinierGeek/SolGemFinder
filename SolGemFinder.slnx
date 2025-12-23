@@ -6,6 +6,7 @@
   <Project Path="SolGemFinder.AppHost/SolGemFinder.AppHost.csproj" />
   <Project Path="SolGemFinder.Domain/SolGemFinder.Domain.csproj" />
   <Project Path="SolGemFinder.GemFinderWorker/SolGemFinder.GemFinderWorker.csproj" />
+  <Project Path="SolGemFinder.IndexerWorker/SolGemFinder.IndexerWorker.csproj" />
   <Project Path="SolGemFinder.Infrastructure/SolGemFinder.Infrastructure.csproj" />
   <Project Path="SolGemFinder.ServiceDefaults/SolGemFinder.ServiceDefaults.csproj" />
   <Project Path="SolGemFinder.Shared/SolGemFinder.Shared.csproj" />
