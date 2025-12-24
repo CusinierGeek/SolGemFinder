@@ -2,7 +2,10 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using SolGemFinder.Shared.Dtos;
+using SolGemFinder.IndexerWorker.Services;
+using SolGemFinder.IndexerWorker.Models;
 
 public interface IIndexerPublisher
 {
@@ -13,34 +16,80 @@ public class IndexerService : BackgroundService
 {
     private readonly ILogger<IndexerService> _logger;
     private readonly IIndexerPublisher _publisher;
+    private readonly ISolanaRadar _radar;
+    private readonly IndexerServiceOptions _options;
 
-    public IndexerService(ILogger<IndexerService> logger, IIndexerPublisher publisher)
+    public IndexerService(
+        ILogger<IndexerService> logger, 
+        IIndexerPublisher publisher,
+        ISolanaRadar radar,
+        IOptions<IndexerServiceOptions> options)
     {
         _logger = logger;
         _publisher = publisher;
+        _radar = radar;
+        _options = options.Value;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("IndexerService started (publishing test messages every 30s).");
+        _logger.LogInformation("?? IndexerService (Radar) started - Polling every {Interval}ms", _options.PollingIntervalMs);
+        _logger.LogInformation("? Mode: ULTRA-FAST filtering (70-80% rejection rate)");
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            var message = new DiscoveryDto { Id = System.Guid.NewGuid(), Source = "pump.fun", Timestamp = System.DateTime.UtcNow, Stage = "indexer", History = "Indexer:created" };
             try
             {
-                _logger.LogInformation("Indexer publishing test message {Id} with history: {History}", message.Id, message.History);
-                await _publisher.PublishAsync(message, stoppingToken);
-                _logger.LogInformation("Indexer published test discovery {Id}.", message.Id);
+                var newTokens = await _radar.ScanForNewTokensAsync(stoppingToken);
+
+                if (newTokens.Any())
+                {
+                    _logger.LogInformation("?? Radar found {Count} NEW token creation(s)", newTokens.Count);
+
+                    foreach (var token in newTokens)
+                    {
+                        var discovery = new DiscoveryDto
+                        {
+                            Id = System.Guid.NewGuid(),
+                            Source = "pump.fun",
+                            Timestamp = token.Timestamp,
+                            Stage = "indexer",
+                            History = BuildTokenHistory(token)
+                        };
+
+                        await _publisher.PublishAsync(discovery, stoppingToken);
+                        _logger.LogInformation("?? Published: {TokenAddress} ? DetectionWorker", token.TokenAddress);
+                    }
+                }
             }
             catch (System.Exception ex)
             {
-                _logger.LogError(ex, "Error publishing discovery from indexer");
+                _logger.LogError(ex, "? Error during radar scan");
             }
 
-            await Task.Delay(30_000, stoppingToken);
+            await Task.Delay(_options.PollingIntervalMs, stoppingToken);
         }
 
         _logger.LogInformation("IndexerService stopping.");
+    }
+
+    private static string BuildTokenHistory(SolGemFinder.IndexerWorker.Models.PumpFunTokenInfo token)
+    {
+        var parts = new List<string>
+        {
+            "Indexer:created",
+            $"Token:{token.TokenAddress}",
+            $"Tx:{token.TransactionSignature}",
+            $"Slot:{token.Slot}",
+            $"Time:{token.Timestamp:yyyy-MM-ddTHH:mm:ss}Z"
+        };
+
+        if (!string.IsNullOrEmpty(token.Creator))
+            parts.Add($"Creator:{token.Creator}");
+
+        if (!string.IsNullOrEmpty(token.BondingCurveAddress))
+            parts.Add($"Bonding:{token.BondingCurveAddress}");
+
+        return string.Join("|", parts);
     }
 }

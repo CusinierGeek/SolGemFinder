@@ -4,6 +4,8 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using SolGemFinder.IndexerWorker.Models;
+using SolGemFinder.IndexerWorker.Services;
 
 var builder = Host.CreateDefaultBuilder(args)
     .ConfigureWebHostDefaults(webBuilder =>
@@ -20,10 +22,19 @@ var builder = Host.CreateDefaultBuilder(args)
                 throw new System.InvalidOperationException("ServiceBus connection string is required");
             }
 
+            // Configure options
+            services.Configure<SolanaRadarOptions>(context.Configuration.GetSection(SolanaRadarOptions.SectionName));
+            services.Configure<IndexerServiceOptions>(context.Configuration.GetSection(IndexerServiceOptions.SectionName));
+
+            // Azure Service Bus
             services.AddSingleton(new ServiceBusClient(serviceBusConnection));
             services.AddSingleton<IndexerDiscoveryPublisher>();
             services.AddSingleton<IIndexerPublisher>(sp => sp.GetRequiredService<IndexerDiscoveryPublisher>());
 
+            // Solana Radar Service
+            services.AddSingleton<ISolanaRadar, SolanaRadar>();
+
+            // Background Service
             services.AddHostedService<IndexerService>();
 
             services.AddRouting();

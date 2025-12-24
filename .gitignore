@@ -1,5 +1,8 @@
-/SolGemFinder.AppHost/appsettings.Development.Local.json
 *.user
 .vs/
 bin/
 obj/
+
+# Ignore development settings with sensitive information (API keys, connection strings, etc.)
+**/appsettings.development.json
+/SolGemFinder.AppHost/appsettings.Development.json
