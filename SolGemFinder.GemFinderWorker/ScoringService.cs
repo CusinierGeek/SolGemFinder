@@ -8,13 +8,13 @@ public interface IDiscoveryPublisher
     Task PublishAsync<T>(T payload, CancellationToken ct = default);
 }
 
-public class GemFinderService : BackgroundService
+public class ScoringService : BackgroundService
 {
-    private readonly ILogger<GemFinderService> _logger;
+    private readonly ILogger<ScoringService> _logger;
     private readonly IDiscoveryPublisher _publisher;
-    private readonly GemFinderConsumer? _consumer;
+    private readonly ScoringConsumer? _consumer;
 
-    public GemFinderService(ILogger<GemFinderService> logger, IDiscoveryPublisher publisher, GemFinderConsumer? consumer = null)
+    public ScoringService(ILogger<ScoringService> logger, IDiscoveryPublisher publisher, ScoringConsumer? consumer = null)
     {
         _logger = logger;
         _publisher = publisher;

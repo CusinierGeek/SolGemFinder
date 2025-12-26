@@ -30,11 +30,11 @@ var builder = Host.CreateDefaultBuilder(args)
             services.AddSingleton<IDiscoveryPublisher>(sp => sp.GetRequiredService<ServiceBusDiscoveryPublisher>());
 
             // Register gemfinder consumer
-            services.AddSingleton<GemFinderConsumer>();
+            services.AddSingleton<ScoringConsumer>();
 
             services.AddRouting();
 
-            services.AddHostedService<GemFinderService>();
+            services.AddHostedService<ScoringService>();
         });
 
         webBuilder.Configure(app =>

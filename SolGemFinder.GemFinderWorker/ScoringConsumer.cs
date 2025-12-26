@@ -5,16 +5,16 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using SolGemFinder.Shared.Dtos;
 
-public class GemFinderConsumer
+public class ScoringConsumer
 {
     private readonly ServiceBusClient _client;
-    private readonly ILogger<GemFinderConsumer> _logger;
+    private readonly ILogger<ScoringConsumer> _logger;
     private ServiceBusProcessor? _processor;
     private readonly string _topic;
     private readonly string _subscription;
     private readonly ServiceBusDiscoveryPublisher _publisher;
 
-    public GemFinderConsumer(ServiceBusClient client, IConfiguration config, ILogger<GemFinderConsumer> logger, ServiceBusDiscoveryPublisher publisher)
+    public ScoringConsumer(ServiceBusClient client, IConfiguration config, ILogger<ScoringConsumer> logger, ServiceBusDiscoveryPublisher publisher)
     {
         _client = client;
         _logger = logger;
