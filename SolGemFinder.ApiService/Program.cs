@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using SolGemFinder.Infrastructure.Data;
 using SolGemFinder.Domain.Interfaces;
 using SolGemFinder.Infrastructure.Repositories;
+using SolGemFinder.ServiceDefaults;
 
 var builder = WebApplication.CreateBuilder(args);
 

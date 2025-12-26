@@ -13,7 +13,7 @@
   <ItemGroup>
     <ProjectReference Include="..\SolGemFinder.ApiService\SolGemFinder.ApiService.csproj" />
     <ProjectReference Include="..\SolGemFinder.Web\SolGemFinder.Web.csproj" />
-    <ProjectReference Include="..\SolGemFinder.GemFinderWorker\SolGemFinder.GemFinderWorker.csproj" />
+    <ProjectReference Include="..\SolGemFinder.GemFinderWorker\SolGemFinder.ScoringWorker.csproj" />
     <ProjectReference Include="..\SolGemFinder.TradingWorker\SolGemFinder.TradingWorker.csproj" />
     <ProjectReference Include="..\SolGemFinder.IndexerWorker\SolGemFinder.IndexerWorker.csproj" />
   </ItemGroup>

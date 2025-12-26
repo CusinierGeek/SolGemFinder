@@ -20,7 +20,7 @@ public class IndexerService : BackgroundService
     private readonly IndexerServiceOptions _options;
 
     public IndexerService(
-        ILogger<IndexerService> logger, 
+        ILogger<IndexerService> logger,
         IIndexerPublisher publisher,
         ISolanaRadar radar,
         IOptions<IndexerServiceOptions> options)
@@ -48,17 +48,23 @@ public class IndexerService : BackgroundService
 
                     foreach (var token in newTokens)
                     {
+                        // Construire l'URL Pump.fun avec le bonding curve si disponible
+                        string pumpFunUrl = !string.IsNullOrEmpty(token.BondingCurveAddress)
+                            ? $"https://pump.fun/{token.BondingCurveAddress}"
+                            : $"https://pump.fun/{token.TokenAddress}";
+
                         var discovery = new DiscoveryDto
                         {
                             Id = System.Guid.NewGuid(),
                             Source = "pump.fun",
                             Timestamp = token.Timestamp,
                             Stage = "indexer",
-                            History = BuildTokenHistory(token)
+                            History = BuildTokenHistory(token, pumpFunUrl)
                         };
 
                         await _publisher.PublishAsync(discovery, stoppingToken);
-                        _logger.LogInformation("?? Published: {TokenAddress} ? DetectionWorker", token.TokenAddress);
+                        _logger.LogInformation("?? Published: {TokenAddress} ? DetectionWorker | Pump.fun: {Url}",
+                            token.TokenAddress, pumpFunUrl);
                     }
                 }
             }
@@ -73,12 +79,13 @@ public class IndexerService : BackgroundService
         _logger.LogInformation("IndexerService stopping.");
     }
 
-    private static string BuildTokenHistory(SolGemFinder.IndexerWorker.Models.PumpFunTokenInfo token)
+    private static string BuildTokenHistory(SolGemFinder.IndexerWorker.Models.PumpFunTokenInfo token, string pumpFunUrl)
     {
         var parts = new List<string>
         {
             "Indexer:created",
             $"Token:{token.TokenAddress}",
+            $"PumpFun:{pumpFunUrl}",
             $"Tx:{token.TransactionSignature}",
             $"Slot:{token.Slot}",
             $"Time:{token.Timestamp:yyyy-MM-ddTHH:mm:ss}Z"

@@ -32,7 +32,7 @@ builder.AddProject<Projects.SolGemFinder_Web>("webfrontend")
     .WaitFor(apiService);
 
 // Gem finder worker - discovers potential tokens (architecture only)
-var gemFinder = builder.AddProject<Projects.SolGemFinder_GemFinderWorker>("gemfinder")
+var gemFinder = builder.AddProject<Projects.SolGemFinder_ScoringWorker>("ScoringWorker")
     .WithHttpHealthCheck("/health")
     .WithReference(apiService);
 
