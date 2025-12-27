@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.Options;
 using SolGemFinder.IndexerWorker.Models;
+using SolGemFinder.Shared.Services.BitQuery;
 using Solnet.Rpc;
 using Solnet.Rpc.Models;
 using Solnet.Wallet;
@@ -15,13 +16,25 @@ public class SolanaRadar : ISolanaRadar
     #region Constants
 
     private const string TokenProgramId = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+    private const string Token2022ProgramId = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb";
     private const string SystemProgramId = "11111111111111111111111111111111";
     private const string BondingCurveSuffix = "pump";
-    private const int MinimumAccountKeysForToken = 8;
+    private const int MinimumAccountKeysForToken = 1; // CRITICAL: Pump.fun uses Address Lookup Tables
     private const int SolanaAddressLength = 44;
     private const int DeduplicationCacheCapacity = 10000;
     private const string ApiKeyErrorCode = "-32401";
     private const string ApiKeyQueryParam = "api-key=";
+
+    // Token Program opcodes for mint initialization
+    private const byte InitializeMintOpcode = 0;      // spl-token InitializeMint
+    private const byte InitializeMint2Opcode = 20;    // spl-token-2022 InitializeMint2
+
+    // Set of supported Token Programs (both legacy and Token-2022)
+    private static readonly HashSet<string> TokenPrograms = new()
+    {
+        TokenProgramId,        // spl-token (legacy)
+        Token2022ProgramId     // spl-token-2022 (modern Pump.fun)
+    };
 
     #endregion
 
@@ -29,6 +42,7 @@ public class SolanaRadar : ISolanaRadar
 
     private readonly ILogger<SolanaRadar> _logger;
     private readonly IRpcClient _rpcClient;
+    private readonly SolanaRawRpcClient _rawRpcClient;
     private readonly PublicKey _pumpFunProgramId;
     private readonly SolanaRadarOptions _options;
     private ulong _lastProcessedSlot;
@@ -46,8 +60,9 @@ public class SolanaRadar : ISolanaRadar
     /// </summary>
     /// <param name="logger">Logger for diagnostic information.</param>
     /// <param name="options">Configuration options for the radar service.</param>
+    /// <param name="httpClientFactory">HTTP client factory for raw RPC calls.</param>
     /// <exception cref="InvalidOperationException">Thrown when RPC URL is not configured.</exception>
-    public SolanaRadar(ILogger<SolanaRadar> logger, IOptions<SolanaRadarOptions> options)
+    public SolanaRadar(ILogger<SolanaRadar> logger, IOptions<SolanaRadarOptions> options, IHttpClientFactory httpClientFactory)
     {
         _logger = logger;
         _options = options.Value;
@@ -60,7 +75,13 @@ public class SolanaRadar : ISolanaRadar
         _seenTokens = new HashSet<string>(DeduplicationCacheCapacity);
         _consecutiveJsonErrors = 0;
 
-        _logger.LogInformation("🛰️ SolanaRadar initialized - ULTRA-FAST mode");
+        // Initialize raw RPC client for jsonParsed transactions (ALT support)
+        var httpClient = httpClientFactory.CreateClient("SolanaRpc");
+        var rawRpcLogger = logger as ILogger<SolanaRawRpcClient> ?? 
+            LoggerFactory.Create(b => b.AddConsole()).CreateLogger<SolanaRawRpcClient>();
+        _rawRpcClient = new SolanaRawRpcClient(httpClient, rawRpcLogger, rpcUrl);
+
+        _logger.LogInformation("🛰️ SolanaRadar initialized - ULTRA-FAST mode with jsonParsed support");
         _logger.LogInformation("   Environment: {Env}", Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production");
         _logger.LogInformation("   RPC: {RpcUrl}", MaskApiKey(rpcUrl));
         _logger.LogInformation("   Program ID: {ProgramId}", _options.ProgramId);
@@ -70,6 +91,7 @@ public class SolanaRadar : ISolanaRadar
         _logger.LogInformation("      • Max Retry Attempts: {Max}", _options.MaxRetryAttempts);
         _logger.LogInformation("      • Retry Delay: {Delay}ms", _options.RetryDelayMilliseconds);
         _logger.LogInformation("      • Max Consecutive JSON Errors: {Max}", _options.MaxConsecutiveJsonErrors);
+        _logger.LogInformation("      • ALT Support: ✅ Enabled via jsonParsed encoding");
     }
 
     #endregion
@@ -210,11 +232,11 @@ public class SolanaRadar : ISolanaRadar
                 if (!signaturesResponse.WasRequestSuccessfullyHandled || signaturesResponse.Result == null)
                 {
                     var isJsonError = signaturesResponse.Reason?.Contains("parse json", StringComparison.OrdinalIgnoreCase) == true;
-                    
+
                     if (isJsonError)
                     {
                         _consecutiveJsonErrors++;
-                        
+
                         if (_consecutiveJsonErrors >= _options.MaxConsecutiveJsonErrors)
                         {
                             _logger.LogWarning("⚠️ Persistent JSON parsing errors detected ({Count}/{Max}). RPC may be unstable.",
@@ -270,62 +292,6 @@ public class SolanaRadar : ISolanaRadar
         return new List<SignatureStatusInfo>();
     }
 
-    /// <summary>
-    /// Gets transaction details from the blockchain.
-    /// Implements retry logic for transient RPC errors.
-    /// </summary>
-    /// <param name="signature">Transaction signature.</param>
-    /// <returns>Transaction metadata, or null if the request fails.</returns>
-    private async Task<TransactionMetaInfo?> GetTransactionAsync(string signature)
-    {
-        for (int attempt = 1; attempt <= _options.MaxRetryAttempts; attempt++)
-        {
-            try
-            {
-                var txResponse = await _rpcClient.GetTransactionAsync(
-                    signature,
-                    commitment: Solnet.Rpc.Types.Commitment.Confirmed
-                );
-
-                if (!txResponse.WasRequestSuccessfullyHandled || txResponse.Result?.Transaction?.Message == null)
-                {
-                    var isJsonError = txResponse.Reason?.Contains("parse json", StringComparison.OrdinalIgnoreCase) == true;
-                    
-                    if (isJsonError && attempt < _options.MaxRetryAttempts)
-                    {
-                        var delay = _options.RetryDelayMilliseconds * attempt;
-                        _logger.LogTrace("🔄 JSON parse error getting transaction {Signature}. Retrying in {Delay}ms...",
-                            signature[..8], delay);
-                        await Task.Delay(delay);
-                        continue;
-                    }
-
-                    return null;
-                }
-
-                return txResponse.Result;
-            }
-            catch (Exception ex)
-            {
-                if (attempt < _options.MaxRetryAttempts)
-                {
-                    var delay = _options.RetryDelayMilliseconds * attempt;
-                    _logger.LogTrace(ex, "Exception getting transaction {Signature}. Retrying in {Delay}ms...",
-                        signature[..8], delay);
-                    await Task.Delay(delay);
-                }
-                else
-                {
-                    _logger.LogDebug(ex, "Failed to get transaction {Signature} after {Attempts} attempts",
-                        signature[..8], _options.MaxRetryAttempts);
-                    return null;
-                }
-            }
-        }
-
-        return null;
-    }
-
     #endregion
 
     #region Transaction Processing
@@ -344,12 +310,23 @@ public class SolanaRadar : ISolanaRadar
     {
         int processed = 0;
         int filtered = 0;
+        var mintsSeen = new HashSet<string>(); // Per-batch deduplication by mint address
+        var signaturesProcessed = new HashSet<string>(); // Prevent processing same signature twice
 
         foreach (var signature in signatures)
         {
             if (ct.IsCancellationRequested)
                 break;
 
+            // Skip if we've already processed this signature in this batch
+            if (signaturesProcessed.Contains(signature.Signature))
+            {
+                _logger.LogWarning("🔁 Duplicate signature in batch: {Signature}", signature.Signature[..8]);
+                filtered++;
+                continue;
+            }
+
+            signaturesProcessed.Add(signature.Signature);
             processed++;
 
             try
@@ -357,17 +334,30 @@ public class SolanaRadar : ISolanaRadar
                 var tokenInfo = await ProcessTransactionAsync(signature, ct);
                 if (tokenInfo != null)
                 {
+                    // Check if already seen globally
                     if (_seenTokens.Contains(tokenInfo.TokenAddress))
                     {
+                        _logger.LogDebug("🔁 Token already seen (global): {Mint}", tokenInfo.TokenAddress[..8]);
                         filtered++;
                         continue;
                     }
 
-                    _seenTokens.Add(tokenInfo.TokenAddress);
-                    discoveries.Add(tokenInfo);
+                    // Check if already seen in this batch (same mint, different bonding curve)
+                    if (mintsSeen.Contains(tokenInfo.TokenAddress))
+                    {
+                        _logger.LogWarning("🔁 Token already seen in batch (duplicate bonding curve): {Mint} | Signature: {Sig}",
+                            tokenInfo.TokenAddress[..8], tokenInfo.TransactionSignature[..8]);
+                        filtered++;
+                        continue;
+                    }
 
-                    _logger.LogInformation("✨ NEW TOKEN: {TokenAddress} | Slot: {Slot}",
-                        tokenInfo.TokenAddress, tokenInfo.Slot);
+                    // Add to discoveries and mark as seen
+                    discoveries.Add(tokenInfo);
+                    _seenTokens.Add(tokenInfo.TokenAddress);
+                    mintsSeen.Add(tokenInfo.TokenAddress);
+
+                    _logger.LogInformation("✨ NEW TOKEN ADDED: {TokenAddress} | Slot: {Slot} | _seenTokens.Count={Count}",
+                        tokenInfo.TokenAddress, tokenInfo.Slot, _seenTokens.Count);
                 }
                 else
                 {
@@ -376,7 +366,8 @@ public class SolanaRadar : ISolanaRadar
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error processing transaction {Signature}", signature.Signature);
+                _logger.LogError(ex, "❌ Error processing transaction {Signature}", signature.Signature);
+                filtered++;
             }
         }
 
@@ -385,241 +376,69 @@ public class SolanaRadar : ISolanaRadar
 
     /// <summary>
     /// Processes a single transaction and attempts to extract token information.
+    /// Uses jsonParsed encoding to automatically resolve Address Lookup Tables.
     /// </summary>
     /// <param name="signatureInfo">Signature status information.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>Token information if extraction was successful, null otherwise.</returns>
     private async Task<PumpFunTokenInfo?> ProcessTransactionAsync(SignatureStatusInfo signatureInfo, CancellationToken ct)
     {
+        var sigShort = signatureInfo.Signature[..8];
+        
         if (signatureInfo.ConfirmationStatus == null)
         {
+            _logger.LogDebug("⏭️ Skipping {Sig}: No confirmation status", sigShort);
             return null;
         }
 
         try
         {
-            var transaction = await GetTransactionAsync(signatureInfo.Signature);
-            if (transaction == null)
+            // CRITICAL: Use jsonParsed encoding to get ALT-resolved accounts
+            var parsedDoc = await _rawRpcClient.GetTransactionParsedAsync(signatureInfo.Signature, ct);
+            if (parsedDoc == null)
             {
+                _logger.LogWarning("⚠️ REJECTED {Sig}: Failed to fetch jsonParsed transaction (RPC error or null response)", sigShort);
                 return null;
             }
 
-            var message = transaction.Transaction.Message;
-            var accountKeys = message.AccountKeys.ToList();
-
-            if (!IsValidTokenTransaction(accountKeys))
+            // Extract Pump.fun token creation
+            var extraction = _rawRpcClient.ExtractPumpFunTokenCreation(parsedDoc, _pumpFunProgramId.Key);
+            if (extraction == null)
             {
+                _logger.LogDebug("⏭️ Skipping {Sig}: Not a Pump.fun CREATE instruction (could be buy/sell/other)", sigShort);
                 return null;
             }
 
-            var (hasCreateAccount, hasInitializeMint, isPumpFunTrade) = AnalyzeInstructions(message.Instructions, accountKeys);
-
-            // Priority 1: Token creation
-            if (hasCreateAccount && hasInitializeMint)
+            var (mint, bonding) = extraction.Value;
+            if (string.IsNullOrEmpty(mint) || string.IsNullOrEmpty(bonding))
             {
-                return await ExtractTokenCreationAsync(accountKeys, signatureInfo, transaction);
+                _logger.LogWarning("⚠️ REJECTED {Sig}: Extracted empty mint ({Mint}) or bonding ({Bonding})", 
+                    sigShort, 
+                    string.IsNullOrEmpty(mint) ? "EMPTY" : mint[..8],
+                    string.IsNullOrEmpty(bonding) ? "EMPTY" : bonding[..8]);
+                return null;
             }
 
-            // Priority 2: Pump.fun trade
-            if (isPumpFunTrade)
-            {
-                return await ExtractTokenFromTradeAsync(accountKeys, signatureInfo, transaction);
-            }
+            var timestamp = GetTimestamp(signatureInfo);
 
-            return null;
+            _logger.LogInformation("✅ PUMP.FUN TOKEN EXTRACTED: {Mint} | Bonding: {Bonding} | Sig: {Sig}",
+                mint, bonding, sigShort);
+
+            return new PumpFunTokenInfo
+            {
+                TokenAddress = mint,
+                TransactionSignature = signatureInfo.Signature,
+                Slot = signatureInfo.Slot,
+                Timestamp = timestamp,
+                IsPostBonding = false,
+                BondingCurveAddress = bonding
+            };
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "Error processing transaction {Signature}", signatureInfo.Signature);
+            _logger.LogError(ex, "❌ EXCEPTION processing transaction {Sig} (Slot: {Slot})", sigShort, signatureInfo.Slot);
             return null;
         }
-    }
-
-    #endregion
-
-    #region Transaction Analysis
-
-    /// <summary>
-    /// Validates if the transaction has the minimum requirements for a token transaction.
-    /// </summary>
-    /// <param name="accountKeys">List of account keys in the transaction.</param>
-    /// <returns>True if valid, false otherwise.</returns>
-    private static bool IsValidTokenTransaction(List<string> accountKeys)
-    {
-        return accountKeys.Count >= MinimumAccountKeysForToken &&
-               accountKeys.Contains(TokenProgramId);
-    }
-
-    /// <summary>
-    /// Analyzes transaction instructions to determine the transaction type.
-    /// </summary>
-    /// <param name="instructions">Transaction instructions.</param>
-    /// <param name="accountKeys">List of account keys.</param>
-    /// <returns>Tuple indicating if the transaction has create account, initialize mint, or is a Pump.fun trade.</returns>
-    private (bool hasCreateAccount, bool hasInitializeMint, bool isPumpFunTrade) AnalyzeInstructions(
-        InstructionInfo[] instructions,
-        List<string> accountKeys)
-    {
-        bool hasCreateAccount = false;
-        bool hasInitializeMint = false;
-        bool isPumpFunTrade = false;
-
-        foreach (var instruction in instructions)
-        {
-            var programId = accountKeys[(int)instruction.ProgramIdIndex];
-
-            if (programId == SystemProgramId && instruction.Data?.Length > 0)
-            {
-                hasCreateAccount = true;
-            }
-            else if (programId == TokenProgramId && instruction.Data?.Length > 0)
-            {
-                hasInitializeMint = true;
-            }
-            else if (programId == _pumpFunProgramId.Key && instruction.Data?.Length > 0)
-            {
-                isPumpFunTrade = true;
-            }
-        }
-
-        return (hasCreateAccount, hasInitializeMint, isPumpFunTrade);
-    }
-
-    #endregion
-
-    #region Token Extraction
-
-    /// <summary>
-    /// Extracts token information from a token creation transaction.
-    /// </summary>
-    /// <param name="accountKeys">List of account keys in the transaction.</param>
-    /// <param name="signatureInfo">Signature status information.</param>
-    /// <param name="transaction">Transaction metadata.</param>
-    /// <returns>Token information if extraction was successful, null otherwise.</returns>
-    private async Task<PumpFunTokenInfo?> ExtractTokenCreationAsync(
-        List<string> accountKeys,
-        SignatureStatusInfo signatureInfo,
-        TransactionMetaInfo transaction)
-    {
-        var potentialMintAddress = FindPotentialMintAddress(accountKeys);
-        if (string.IsNullOrEmpty(potentialMintAddress))
-        {
-            return null;
-        }
-
-        var bondingCurveAddress = FindBondingCurveAddress(accountKeys);
-        var timestamp = GetTimestamp(signatureInfo);
-
-        _logger.LogInformation("🆕 NEW TOKEN CREATED: {Mint} | Bonding: {Bonding}",
-            potentialMintAddress, bondingCurveAddress ?? "N/A");
-
-        return new PumpFunTokenInfo
-        {
-            TokenAddress = potentialMintAddress,
-            TransactionSignature = signatureInfo.Signature,
-            Slot = signatureInfo.Slot,
-            Timestamp = timestamp,
-            IsPostBonding = false,
-            BondingCurveAddress = bondingCurveAddress
-        };
-    }
-
-    /// <summary>
-    /// Extracts token information from a Pump.fun trade transaction.
-    /// </summary>
-    /// <param name="accountKeys">List of account keys in the transaction.</param>
-    /// <param name="signatureInfo">Signature status information.</param>
-    /// <param name="transaction">Transaction metadata.</param>
-    /// <returns>Token information if extraction was successful, null otherwise.</returns>
-    private async Task<PumpFunTokenInfo?> ExtractTokenFromTradeAsync(
-        List<string> accountKeys,
-        SignatureStatusInfo signatureInfo,
-        TransactionMetaInfo transaction)
-    {
-        var bondingCurveAddress = FindBondingCurveAddress(accountKeys);
-        if (string.IsNullOrEmpty(bondingCurveAddress))
-        {
-            return null;
-        }
-
-        var potentialMintAddress = FindMintAddressFromTrade(accountKeys, bondingCurveAddress);
-        if (string.IsNullOrEmpty(potentialMintAddress))
-        {
-            return null;
-        }
-
-        // Avoid duplicates
-        if (_seenTokens.Contains(potentialMintAddress))
-        {
-            return null;
-        }
-
-        var timestamp = GetTimestamp(signatureInfo);
-
-        _logger.LogInformation("💰 ACTIVE TOKEN (from trade): {Mint} | Bonding: {Bonding}",
-            potentialMintAddress, bondingCurveAddress);
-
-        return new PumpFunTokenInfo
-        {
-            TokenAddress = potentialMintAddress,
-            TransactionSignature = signatureInfo.Signature,
-            Slot = signatureInfo.Slot,
-            Timestamp = timestamp,
-            IsPostBonding = false,
-            BondingCurveAddress = bondingCurveAddress
-        };
-    }
-
-    #endregion
-
-    #region Address Helpers
-
-    /// <summary>
-    /// Finds the potential mint address from account keys.
-    /// </summary>
-    /// <param name="accountKeys">List of account keys.</param>
-    /// <returns>The potential mint address, or null if not found.</returns>
-    private string? FindPotentialMintAddress(List<string> accountKeys)
-    {
-        return accountKeys
-            .Skip(3)
-            .Take(5)
-            .FirstOrDefault(k =>
-                k != _pumpFunProgramId.Key &&
-                !k.StartsWith("Token") &&
-                !k.StartsWith("11111") &&
-                !k.StartsWith("Sysvar"));
-    }
-
-    /// <summary>
-    /// Finds the bonding curve address from account keys.
-    /// </summary>
-    /// <param name="accountKeys">List of account keys.</param>
-    /// <returns>The bonding curve address, or null if not found.</returns>
-    private static string? FindBondingCurveAddress(List<string> accountKeys)
-    {
-        return accountKeys
-            .FirstOrDefault(k => k.EndsWith(BondingCurveSuffix, StringComparison.OrdinalIgnoreCase));
-    }
-
-    /// <summary>
-    /// Finds the mint address from a trade transaction.
-    /// </summary>
-    /// <param name="accountKeys">List of account keys.</param>
-    /// <param name="bondingCurveAddress">The bonding curve address to exclude.</param>
-    /// <returns>The mint address, or null if not found.</returns>
-    private string? FindMintAddressFromTrade(List<string> accountKeys, string bondingCurveAddress)
-    {
-        return accountKeys
-            .Where(k =>
-                k != bondingCurveAddress &&
-                k != _pumpFunProgramId.Key &&
-                !k.StartsWith("Token") &&
-                !k.StartsWith("11111") &&
-                !k.StartsWith("Sysvar") &&
-                k.Length == SolanaAddressLength)
-            .Skip(2) // Skip signer and associated token account
-            .FirstOrDefault();
     }
 
     #endregion

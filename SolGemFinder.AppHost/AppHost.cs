@@ -22,6 +22,12 @@ if (!string.IsNullOrWhiteSpace(sbSub))
 
 var builder = DistributedApplication.CreateBuilder(args);
 
+// Add Redis with persistent volume for watchlist survival
+var redis = builder.AddRedis("redis")
+    .WithDataVolume("solgemfinder-redis-data")  // Persistent volume
+    .WithLifetime(ContainerLifetime.Persistent) // Keep container between runs
+    .WithRedisCommander();
+
 var apiService = builder.AddProject<Projects.SolGemFinder_ApiService>("apiservice")
     .WithHttpHealthCheck("/health");
 
@@ -31,20 +37,21 @@ builder.AddProject<Projects.SolGemFinder_Web>("webfrontend")
     .WithReference(apiService)
     .WaitFor(apiService);
 
-// Gem finder worker - discovers potential tokens (architecture only)
-var gemFinder = builder.AddProject<Projects.SolGemFinder_ScoringWorker>("ScoringWorker")
+// Scoring worker (Detection Worker) - monitors watchlist and scores tokens
+var scoringWorker = builder.AddProject<Projects.SolGemFinder_ScoringWorker>("ScoringWorker")
     .WithHttpHealthCheck("/health")
+    .WithReference(redis)  // Redis for watchlist cache
     .WithReference(apiService);
 
-// Trading worker - consumes discoveries and executes trades (architecture only)
+// Trading worker - consumes discoveries and executes trades
 builder.AddProject<Projects.SolGemFinder_TradingWorker>("trading")
     .WithHttpHealthCheck("/health")
     .WithReference(apiService)
-    .WithReference(gemFinder)
+    .WithReference(scoringWorker)
     .WaitFor(apiService)
-    .WaitFor(gemFinder);
+    .WaitFor(scoringWorker);
 
-// Indexer worker - listens to pump.fun and publishes discoveries (architecture only)
+// Indexer worker - listens to pump.fun and publishes discoveries
 builder.AddProject<Projects.SolGemFinder_IndexerWorker>("indexer")
     .WithHttpHealthCheck("/health")
     .WithReference(apiService)

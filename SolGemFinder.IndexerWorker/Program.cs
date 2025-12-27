@@ -4,8 +4,8 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using SolGemFinder.Shared.Services.BitQuery;
 using SolGemFinder.IndexerWorker.Models;
-using SolGemFinder.IndexerWorker.Services;
 
 var builder = Host.CreateDefaultBuilder(args)
     .ConfigureWebHostDefaults(webBuilder =>
@@ -23,21 +23,30 @@ var builder = Host.CreateDefaultBuilder(args)
             }
 
             // Configure options
-            services.Configure<SolanaRadarOptions>(context.Configuration.GetSection(SolanaRadarOptions.SectionName));
+            services.Configure<BitQueryOptions>(context.Configuration.GetSection(BitQueryOptions.SectionName));
             services.Configure<IndexerServiceOptions>(context.Configuration.GetSection(IndexerServiceOptions.SectionName));
+
+            // HTTP Client for BitQuery GraphQL API
+            services.AddHttpClient("BitQuery")
+                .ConfigureHttpClient(client =>
+                {
+                    client.Timeout = TimeSpan.FromSeconds(30);
+                });
 
             // Azure Service Bus
             services.AddSingleton(new ServiceBusClient(serviceBusConnection));
             services.AddSingleton<IndexerDiscoveryPublisher>();
             services.AddSingleton<IIndexerPublisher>(sp => sp.GetRequiredService<IndexerDiscoveryPublisher>());
 
-            // Solana Radar Service
-            services.AddSingleton<ISolanaRadar, SolanaRadar>();
+            // BitQuery PumpFun Service (from Shared project)
+            services.AddSingleton<IBitQueryPumpFunService, BitQueryPumpFunService>();
 
             // Background Service
             services.AddHostedService<IndexerService>();
 
             services.AddRouting();
+
+            logger.LogInformation("? IndexerWorker configured with BitQuery integration (Shared)");
         });
 
         webBuilder.Configure(app =>

@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using SolGemFinder.TradingWorker;
 
 public class TradingService : BackgroundService
 {
@@ -17,46 +18,55 @@ public class TradingService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("TradingService starting.");
+        _logger.LogInformation("?? TradingService starting...");
 
-        // If a ServiceBusDiscoveryConsumer is registered (Service Bus mode), start it.
-        var sbConsumer = _services.GetService(typeof(ServiceBusDiscoveryConsumer)) as ServiceBusDiscoveryConsumer;
-        if (sbConsumer != null)
+        // Start the new TradingSignalConsumer
+        var tradingConsumer = _services.GetService<TradingSignalConsumer>();
+        if (tradingConsumer != null)
         {
-            _logger.LogInformation("Starting ServiceBusDiscoveryConsumer...");
+            _logger.LogInformation("?? Starting TradingSignalConsumer...");
             try
             {
-                sbConsumer.Start();
+                tradingConsumer.Start();
+                _logger.LogInformation("? TradingSignalConsumer started successfully");
             }
             catch (System.Exception ex)
             {
-                _logger.LogError(ex, "Failed to start ServiceBusDiscoveryConsumer");
+                _logger.LogError(ex, "? Failed to start TradingSignalConsumer");
             }
+        }
+        else
+        {
+            _logger.LogWarning("?? TradingSignalConsumer not registered!");
         }
 
         try
         {
+            _logger.LogInformation("?? TradingService is now listening for trading signals...");
+
             while (!stoppingToken.IsCancellationRequested)
             {
-                await Task.Delay(1000, stoppingToken);
+                await Task.Delay(10000, stoppingToken); // Log heartbeat every 10s
+                _logger.LogDebug("?? TradingService heartbeat - Waiting for signals...");
             }
         }
         finally
         {
-            if (sbConsumer != null)
+            if (tradingConsumer != null)
             {
-                _logger.LogInformation("Stopping ServiceBusDiscoveryConsumer...");
+                _logger.LogInformation("?? Stopping TradingSignalConsumer...");
                 try
                 {
-                    await sbConsumer.StopAsync();
+                    await tradingConsumer.StopAsync();
+                    _logger.LogInformation("? TradingSignalConsumer stopped");
                 }
                 catch (System.Exception ex)
                 {
-                    _logger.LogError(ex, "Error stopping ServiceBusDiscoveryConsumer");
+                    _logger.LogError(ex, "? Error stopping TradingSignalConsumer");
                 }
             }
 
-            _logger.LogInformation("TradingService stopping.");
+            _logger.LogInformation("?? TradingService stopped");
         }
     }
 }

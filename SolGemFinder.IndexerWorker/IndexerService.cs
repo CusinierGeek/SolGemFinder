@@ -4,7 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SolGemFinder.Shared.Dtos;
-using SolGemFinder.IndexerWorker.Services;
+using SolGemFinder.Shared.Services.BitQuery;
 using SolGemFinder.IndexerWorker.Models;
 
 public interface IIndexerPublisher
@@ -16,87 +16,88 @@ public class IndexerService : BackgroundService
 {
     private readonly ILogger<IndexerService> _logger;
     private readonly IIndexerPublisher _publisher;
-    private readonly ISolanaRadar _radar;
+    private readonly IBitQueryPumpFunService _bitQuery;
     private readonly IndexerServiceOptions _options;
 
     public IndexerService(
         ILogger<IndexerService> logger,
         IIndexerPublisher publisher,
-        ISolanaRadar radar,
+        IBitQueryPumpFunService bitQuery,
         IOptions<IndexerServiceOptions> options)
     {
         _logger = logger;
         _publisher = publisher;
-        _radar = radar;
+        _bitQuery = bitQuery;
         _options = options.Value;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("?? IndexerService (Radar) started - Polling every {Interval}ms", _options.PollingIntervalMs);
-        _logger.LogInformation("? Mode: ULTRA-FAST filtering (70-80% rejection rate)");
+        _logger.LogInformation("?? IndexerService (BitQuery) started - Polling every {Interval}ms", _options.PollingIntervalMs);
+        _logger.LogInformation("?? Mode: TARGETED discovery (high-quality tokens only)");
+        _logger.LogInformation("   Strategy: {Strategy}", _options.DiscoveryStrategy);
 
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                var newTokens = await _radar.ScanForNewTokensAsync(stoppingToken);
+                var newTokens = await _bitQuery.DiscoverTokensAsync(_options.DiscoveryStrategy, stoppingToken);
 
                 if (newTokens.Any())
                 {
-                    _logger.LogInformation("?? Radar found {Count} NEW token creation(s)", newTokens.Count);
+                    _logger.LogInformation("?? BitQuery found {Count} high-quality token(s)", newTokens.Count);
 
                     foreach (var token in newTokens)
                     {
-                        // Construire l'URL Pump.fun avec le bonding curve si disponible
-                        string pumpFunUrl = !string.IsNullOrEmpty(token.BondingCurveAddress)
-                            ? $"https://pump.fun/{token.BondingCurveAddress}"
-                            : $"https://pump.fun/{token.TokenAddress}";
-
-                        var discovery = new DiscoveryDto
+                        // Create rich TokenDiscoveryDto with all BitQuery data
+                        var tokenDiscovery = new TokenDiscoveryDto
                         {
                             Id = System.Guid.NewGuid(),
-                            Source = "pump.fun",
+                            Source = "bitquery-pumpfun",
                             Timestamp = token.Timestamp,
-                            Stage = "indexer",
-                            History = BuildTokenHistory(token, pumpFunUrl)
+                            Strategy = _options.DiscoveryStrategy.ToString(),
+                            TokenAddress = token.TokenAddress,
+                            TransactionSignature = token.TransactionSignature,
+                            Slot = token.Slot,
+                            TokenName = token.TokenName,
+                            TokenSymbol = token.TokenSymbol,
+                            Creator = token.Creator,
+                            BondingCurveAddress = token.BondingCurveAddress,
+                            BondingCurveProgress = token.BondingCurveProgress,
+                            IsPostBonding = token.IsPostBonding,
+                            LiquidityInSOL = token.LiquidityInSOL,
+                            LiquidityInUSD = token.LiquidityInUSD,
+                            InitialSupply = token.InitialSupply
                         };
 
-                        await _publisher.PublishAsync(discovery, stoppingToken);
-                        _logger.LogInformation("?? Published: {TokenAddress} ? DetectionWorker | Pump.fun: {Url}",
-                            token.TokenAddress, pumpFunUrl);
+                        // Publish new format
+                        await _publisher.PublishAsync(tokenDiscovery, stoppingToken);
+
+                        _logger.LogInformation("?? Published: {Symbol} ({TokenAddress}) ? ScoringWorker | Quality: {Quality}% | Bonding: {Progress}% | Liquidity: {SOL} SOL",
+                            tokenDiscovery.TokenSymbol ?? "Unknown",
+                            tokenDiscovery.TokenAddress[..8],
+                            tokenDiscovery.QualityScore,
+                            tokenDiscovery.BondingCurveProgress?.ToString("F2") ?? "N/A",
+                            tokenDiscovery.LiquidityInSOL?.ToString("F2") ?? "N/A");
+                        
+                        _logger.LogDebug("   ?? URLs: Pump.fun={PumpFun} | Solscan={Solscan}",
+                            tokenDiscovery.PumpFunUrl,
+                            tokenDiscovery.SolscanUrl);
                     }
+                }
+                else
+                {
+                    _logger.LogDebug("No new tokens discovered in this cycle");
                 }
             }
             catch (System.Exception ex)
             {
-                _logger.LogError(ex, "? Error during radar scan");
+                _logger.LogError(ex, "? Error during BitQuery token discovery");
             }
 
             await Task.Delay(_options.PollingIntervalMs, stoppingToken);
         }
 
         _logger.LogInformation("IndexerService stopping.");
-    }
-
-    private static string BuildTokenHistory(SolGemFinder.IndexerWorker.Models.PumpFunTokenInfo token, string pumpFunUrl)
-    {
-        var parts = new List<string>
-        {
-            "Indexer:created",
-            $"Token:{token.TokenAddress}",
-            $"PumpFun:{pumpFunUrl}",
-            $"Tx:{token.TransactionSignature}",
-            $"Slot:{token.Slot}",
-            $"Time:{token.Timestamp:yyyy-MM-ddTHH:mm:ss}Z"
-        };
-
-        if (!string.IsNullOrEmpty(token.Creator))
-            parts.Add($"Creator:{token.Creator}");
-
-        if (!string.IsNullOrEmpty(token.BondingCurveAddress))
-            parts.Add($"Bonding:{token.BondingCurveAddress}");
-
-        return string.Join("|", parts);
     }
 }

@@ -1,5 +1,8 @@
-namespace SolGemFinder.IndexerWorker.Models;
+namespace SolGemFinder.Shared.Services.BitQuery;
 
+/// <summary>
+/// Represents PumpFun token information from BitQuery or blockchain scanning.
+/// </summary>
 public record PumpFunTokenInfo
 {
     public required string TokenAddress { get; init; }
@@ -7,18 +10,25 @@ public record PumpFunTokenInfo
     public required ulong Slot { get; init; }
     public required DateTime Timestamp { get; init; }
     
-    // Bonding status (will be checked by DetectionWorker)
+    // Bonding status
     public bool IsPostBonding { get; init; }
     
-    // Metadata (optional, extracted if available)
+    // Bonding curve progress percentage (0-100)
+    public decimal? BondingCurveProgress { get; init; }
+    
+    // Metadata
     public string? TokenName { get; init; }
     public string? TokenSymbol { get; init; }
     public string? Creator { get; init; }
     
-    // Bonding curve address (important for tracking)
+    // Bonding curve address
     public string? BondingCurveAddress { get; init; }
     
-    // Initial metrics (if available from creation tx)
+    // Initial metrics
     public decimal? InitialLiquidity { get; init; }
     public long? InitialSupply { get; init; }
+    
+    // Pool metrics from BitQuery
+    public decimal? LiquidityInSOL { get; init; }
+    public decimal? LiquidityInUSD { get; init; }
 }

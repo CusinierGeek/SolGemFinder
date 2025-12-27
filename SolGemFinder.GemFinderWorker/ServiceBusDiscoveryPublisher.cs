@@ -5,6 +5,7 @@ using Azure.Messaging.ServiceBus;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using SolGemFinder.Shared.Dtos;
+using SolGemFinder.ScoringWorker;
 
 public class ServiceBusDiscoveryPublisher : IDiscoveryPublisher
 {

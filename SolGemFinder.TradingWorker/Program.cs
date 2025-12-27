@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using SolGemFinder.TradingWorker;
 
 var builder = Host.CreateDefaultBuilder(args)
     .ConfigureWebHostDefaults(webBuilder =>
@@ -21,8 +22,9 @@ var builder = Host.CreateDefaultBuilder(args)
             }
 
             services.AddSingleton(new ServiceBusClient(serviceBusConnection));
-            services.AddSingleton<ServiceBusDiscoveryConsumer>();
-            services.AddSingleton<IDiscoveryConsumer>(sp => sp.GetRequiredService<ServiceBusDiscoveryConsumer>());
+            
+            // Register the new TradingSignalConsumer instead of old DiscoveryConsumer
+            services.AddSingleton<TradingSignalConsumer>();
 
             services.AddHostedService<TradingService>();
 
@@ -36,7 +38,12 @@ var builder = Host.CreateDefaultBuilder(args)
             app.UseEndpoints(endpoints =>
             {
                 // health
-                endpoints.MapGet("/health", () => Results.Ok("healthy"));
+                endpoints.MapGet("/health", () => Results.Ok(new 
+                { 
+                    status = "healthy",
+                    service = "TradingWorker",
+                    timestamp = DateTime.UtcNow
+                }));
             });
         });
     })

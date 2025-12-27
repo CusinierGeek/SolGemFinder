@@ -1,4 +1,5 @@
 using SolGemFinder.IndexerWorker.Models;
+using SolGemFinder.Shared.Services.BitQuery;
 
 namespace SolGemFinder.IndexerWorker.Services;
 
