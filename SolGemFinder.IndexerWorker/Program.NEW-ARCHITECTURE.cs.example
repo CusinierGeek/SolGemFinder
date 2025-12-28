@@ -1,0 +1,82 @@
+// ============================================================================
+// EXAMPLE: How to update IndexerWorker Program.cs for the new architecture
+// ============================================================================
+
+using Azure.Messaging.ServiceBus;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using SolGemFinder.Shared.Services.BitQuery;
+using SolGemFinder.Shared.Services.Discovery;  // NEW
+using SolGemFinder.IndexerWorker.Models;
+
+var builder = Host.CreateDefaultBuilder(args)
+    .ConfigureWebHostDefaults(webBuilder =>
+    {
+        webBuilder.ConfigureServices((context, services) =>
+        {
+            var loggerFactory = services.BuildServiceProvider().GetRequiredService<ILoggerFactory>();
+            var logger = loggerFactory.CreateLogger("Startup");
+
+            var serviceBusConnection = System.Environment.GetEnvironmentVariable("SERVICEBUS_CONNECTION");
+            if (string.IsNullOrWhiteSpace(serviceBusConnection))
+            {
+                logger.LogCritical("ServiceBus connection string is not configured. Set SERVICEBUS_CONNECTION environment variable.");
+                throw new System.InvalidOperationException("ServiceBus connection string is required");
+            }
+
+            // Configure options
+            services.Configure<BitQueryOptions>(context.Configuration.GetSection(BitQueryOptions.SectionName));
+            services.Configure<IndexerServiceOptions>(context.Configuration.GetSection(IndexerServiceOptions.SectionName));
+
+            // HTTP Client for BitQuery GraphQL API
+            services.AddHttpClient("BitQuery")
+                .ConfigureHttpClient(client =>
+                {
+                    client.Timeout = TimeSpan.FromSeconds(30);
+                });
+
+            // Azure Service Bus
+            services.AddSingleton(new ServiceBusClient(serviceBusConnection));
+            services.AddSingleton<IndexerDiscoveryPublisher>();
+            services.AddSingleton<IIndexerPublisher>(sp => sp.GetRequiredService<IndexerDiscoveryPublisher>());
+
+            // BitQuery PumpFun Service (from Shared project)
+            services.AddSingleton<IBitQueryPumpFunService, BitQueryPumpFunService>();
+
+            // ========== NEW: Token Discovery Services ==========
+            // This adds:
+            // - BitQueryDiscoveryAdapter (wraps IBitQueryPumpFunService)
+            // - RpcDiscoveryService (direct blockchain access)
+            // - TokenDiscoveryServiceFactory (with automatic fallback)
+            services.AddTokenDiscoveryServices(options =>
+            {
+                options.EnableBitQuery = true;   // Use BitQuery (primary)
+                options.EnableRpc = true;        // Enable RPC fallback
+                options.PrimaryService = "BitQuery";
+            });
+            // ===================================================
+
+            // Background Service
+            services.AddHostedService<IndexerService>();
+
+            services.AddRouting();
+
+            logger.LogInformation("?? IndexerWorker configured with multi-source token discovery");
+        });
+
+        webBuilder.Configure(app =>
+        {
+            app.UseRouting();
+
+            app.UseEndpoints(endpoints =>
+            {
+                endpoints.MapGet("/health", () => Results.Ok("healthy"));
+            });
+        });
+    })
+    .Build();
+
+await builder.RunAsync();
